@@ -7,6 +7,8 @@ import com.sedmelluq.discord.lavaplayer.filter.UniversalPcmAudioFilter
 import com.sedmelluq.discord.lavaplayer.format.AudioDataFormat
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import dev.arbjerg.lavalink.api.AudioFilterExtension
+import dev.arbjerg.lavalink.api.IPlayer
+import dev.arbjerg.lavalink.api.PlayerAudioFilterExtension
 import dev.arbjerg.lavalink.protocol.v4.*
 import kotlinx.serialization.json.JsonElement
 import dev.arbjerg.lavalink.protocol.v4.Band as Bandv4
@@ -77,6 +79,7 @@ class FilterChain(
     }
 
     private fun buildList() = listOfNotNull(
+        *pluginFilters.filter { (it.extension as? PlayerAudioFilterExtension)?.afterBuiltInFilters == true }.toTypedArray(),
         volume,
         equalizer,
         karaoke,
@@ -87,12 +90,19 @@ class FilterChain(
         rotation,
         channelMix,
         lowPass,
-        *pluginFilters.toTypedArray()
+        *pluginFilters.filterNot { (it.extension as? PlayerAudioFilterExtension)?.afterBuiltInFilters == true }.toTypedArray()
     )
 
     val isEnabled get() = buildList().any { it.isEnabled }
 
     override fun buildChain(
+        track: AudioTrack?,
+        format: AudioDataFormat,
+        output: UniversalPcmAudioFilter
+    ): MutableList<AudioFilter> = buildChainForPlayer(null, track, format, output)
+
+    fun buildChainForPlayer(
+        player: IPlayer?,
         track: AudioTrack?,
         format: AudioDataFormat,
         output: UniversalPcmAudioFilter
@@ -104,7 +114,11 @@ class FilterChain(
 
         for (filter in enabledFilters) {
             val outputTo = pipeline.lastOrNull() ?: output
-            val builtFilter = filter.build(format, outputTo)
+            val builtFilter = if (player != null && filter is PluginConfig && filter.extension is PlayerAudioFilterExtension) {
+                filter.extension.buildForPlayer(player, filter.json, format, outputTo)
+            } else {
+                filter.build(format, outputTo)
+            }
             if (builtFilter != null) {
                 pipeline.add(builtFilter)
             }
