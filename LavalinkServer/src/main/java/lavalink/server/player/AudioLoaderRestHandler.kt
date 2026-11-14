@@ -73,7 +73,15 @@ class AudioLoaderRestHandler(
             is AudioPlaylist -> {
                 log.info("Loaded playlist ${item.name}")
 
-                val tracks = item.tracks.map { it.toTrack(audioPlayerManager, pluginInfoModifiers) }
+                // a source can return an entry without a title or author, which cannot be encoded: leave it out instead of failing the whole list
+                val tracks = item.tracks.mapNotNull {
+                    try {
+                        it.toTrack(audioPlayerManager, pluginInfoModifiers)
+                    } catch (ex: NullPointerException) {
+                        log.warn("Skipping a result of \"$identifier\" that cannot be encoded (identifier ${it.identifier}, title ${it.info.title}, author ${it.info.author})")
+                        null
+                    }
+                }
                 if (item.isSearchResult) {
                     LoadResult.searchResult(tracks)
                 } else {
