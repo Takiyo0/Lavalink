@@ -24,12 +24,16 @@ package lavalink.server.player
 import com.sedmelluq.discord.lavaplayer.format.StandardAudioDataFormats
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager
+import com.sedmelluq.discord.lavaplayer.filter.PcmFilterFactory
 import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason
 import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame
 import dev.arbjerg.lavalink.api.AudioPluginInfoModifier
 import dev.arbjerg.lavalink.api.IPlayer
+import dev.arbjerg.lavalink.api.AudioOutputPosition
+import lavalink.server.player.crossfade.CrossfadeController
+import lavalink.server.player.crossfade.SwitchableAudioPlayer
 import io.netty.buffer.ByteBuf
 import lavalink.server.config.ServerConfig
 import lavalink.server.io.SocketContext
@@ -48,23 +52,76 @@ class LavalinkPlayer(
     private val serverConfig: ServerConfig,
     audioPlayerManager: AudioPlayerManager,
     pluginInfoModifiers: List<AudioPluginInfoModifier>
-) : AudioEventAdapter(), IPlayer {
+) : AudioEventAdapter(), IPlayer, AudioOutputPosition {
+    @Volatile
+    override var lastProvidedFramePositionMs: Long? = null
+        private set
     private val buffer = ByteBuffer.allocate(StandardAudioDataFormats.DISCORD_OPUS.maximumChunkSize())
     private val mutableFrame = MutableAudioFrame().apply { setBuffer(buffer) }
 
     val audioLossCounter = AudioLossCounter()
     var endMarkerHit = false
+
+    /** Position at which the current track is stopped by an end time, if any. */
+    @Volatile
+    var endTimeMs: Long? = null
+
     var filters: FilterChain = FilterChain()
         set(value) {
-            audioPlayer.setFilterFactory(value.takeIf { it.isEnabled })
+            audioPlayer.setFilterFactory(value.takeIf { it.isEnabled }?.let { chain ->
+                PcmFilterFactory { track, format, output ->
+                    chain.buildChainForPlayer(this, track, format, output)
+                }
+            })
+            // The standby is not the player plugins know, so it gets no player-aware filters until promoted.
+            slots.standby?.setFilterFactory(standbyFilterFactory(value))
             field = value
         }
 
-    override val audioPlayer: AudioPlayer = audioPlayerManager.createPlayer().also {
-        it.addListener(this)
-        it.addListener(EventEmitter(audioPlayerManager, this, pluginInfoModifiers))
-        it.addListener(audioLossCounter)
+    private val slots = SwitchableAudioPlayer(audioPlayerManager.createPlayer())
+
+    override val audioPlayer: AudioPlayer get() = slots
+
+    internal val crossfade = CrossfadeController(
+        audioPlayerManager,
+        slots,
+        CrossfadeController.Settings(
+            serverConfig.crossfade.enabled,
+            serverConfig.crossfade.durationMs.coerceIn(CrossfadeController.MIN_DURATION_MS, CrossfadeController.MAX_DURATION_MS)
+        ),
+        object : CrossfadeController.Host {
+            override fun configureStandby(player: AudioPlayer) {
+                player.volume = slots.volume
+                player.setFilterFactory(standbyFilterFactory(filters))
+            }
+
+            override fun promoted(player: AudioPlayer) {
+                endTimeMs = null
+                // Reattach player-aware filters (such as the spectrum tap) now that this is the audible player.
+                if (filters.isEnabled) player.setFilterFactory(PcmFilterFactory { track, format, output ->
+                    filters.buildChainForPlayer(this@LavalinkPlayer, track, format, output)
+                })
+            }
+
+            override fun startReserved(track: AudioTrack) {
+                endTimeMs = null
+                slots.playTrack(track)
+                sendPlayerUpdate(socketContext, this@LavalinkPlayer)
+            }
+
+            override fun endTimeMs() = this@LavalinkPlayer.endTimeMs
+        },
+        "guild $guildId"
+    )
+
+    init {
+        slots.addListener(this)
+        slots.addListener(EventEmitter(audioPlayerManager, this, pluginInfoModifiers))
+        slots.addListener(audioLossCounter)
     }
+
+    private fun standbyFilterFactory(chain: FilterChain): PcmFilterFactory? =
+        chain.takeIf { it.isEnabled }?.let { PcmFilterFactory { track, format, output -> it.buildChainForPlayer(null, track, format, output) } }
 
     private var updateFuture: ScheduledFuture<*>? = null
 
@@ -75,6 +132,7 @@ class LavalinkPlayer(
         get() = audioPlayer.playingTrack
 
     fun destroy() {
+        crossfade.close()
         audioPlayer.destroy()
     }
 
@@ -84,20 +142,26 @@ class LavalinkPlayer(
 
 
     override fun play(track: AudioTrack) {
+        crossfade.clearReservation()
+        endTimeMs = null
         audioPlayer.playTrack(track)
         sendPlayerUpdate(socketContext, this)
     }
 
     override fun stop() {
+        // An end-time marker stops the track as a normal end, which may start the reserved one.
+        if (!endMarkerHit) crossfade.clearReservation()
         audioPlayer.stopTrack()
     }
 
     override fun setPause(pause: Boolean) {
+        if (pause) crossfade.onPause()
         audioPlayer.isPaused = pause
     }
 
     override fun seekTo(position: Long) {
         val track = audioPlayer.playingTrack ?: throw RuntimeException("Can't seek when not playing anything")
+        crossfade.onSeek(position)
         track.position = position
     }
 
@@ -106,12 +170,14 @@ class LavalinkPlayer(
     }
 
     override fun onTrackEnd(player: AudioPlayer, track: AudioTrack, endReason: AudioTrackEndReason) {
+        lastProvidedFramePositionMs = null
         // 2025-07-31 changed from !! to ? due to possible race condition (or general condition) where
         // updateFuture has not be initialised yet somehow.
         updateFuture?.cancel(false)
     }
 
     override fun onTrackStart(player: AudioPlayer, track: AudioTrack) {
+        lastProvidedFramePositionMs = null
         if (updateFuture?.isCancelled == false) {
             return
         }
@@ -131,9 +197,11 @@ class LavalinkPlayer(
 
         override fun dispose() {}
 
-        override fun canProvide() = audioPlayer.provide(mutableFrame).also { provided ->
+        override fun canProvide() = crossfade.provide(mutableFrame, buffer).also { provided ->
             if (!provided) {
                 audioLossCounter.onLoss()
+            } else {
+                lastProvidedFramePositionMs = crossfade.lastTimecode
             }
         }
 

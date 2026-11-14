@@ -170,6 +170,7 @@ class PlayerRestHandler(
             ?.let { endTime ->
                 val marker = TrackMarker(endTime, TrackEndMarkerHandler(player))
                 player.track?.setMarker(marker)
+                player.endTimeMs = endTime
             }
 
         playerUpdate.filters.ifPresent {
@@ -221,6 +222,7 @@ class PlayerRestHandler(
                 }
 
                 player.play(newTrack)
+                playerUpdate.endTime.ifPresent { endTime -> player.endTimeMs = endTime }
                 player.provideTo(context.getMediaConnection(player))
             } ?: player.stop()
         }

@@ -38,6 +38,9 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
+    crossfade: # Fade a reserved next track in over the end of the current one, see the REST API docs
+      enabled: false # The default for every player; players can override it
+      durationMs: 3000 # Length of the overlap in milliseconds, between 100 and 30000
     nonAllocatingFrameBuffer: false # Setting to true reduces the number of allocations made by each player at the expense of frame rebuilding (e.g. non-instantaneous volume changes)
     bufferDurationMs: 400 # The duration of the NAS buffer. Higher values fare better against longer GC pauses. Duration <= 0 to disable JDA-NAS. Minimum of 40ms, lower values may introduce pauses.
     frameBufferDurationMs: 5000 # How many milliseconds of audio to keep buffered

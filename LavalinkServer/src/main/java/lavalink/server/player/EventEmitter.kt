@@ -72,6 +72,9 @@ class EventEmitter(
                 reason.toLavalink()
             )
         )
+
+        // After the client has been told the track ended, a finished track consumes any reserved next track.
+        this.player.crossfade.onTrackEnded(reason)
     }
 
     // These exceptions are already logged by Lavaplayer

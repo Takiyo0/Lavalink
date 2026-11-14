@@ -48,6 +48,12 @@ class ServerConfig {
     var httpConfig: HttpConfig? = null
     var filters: Map<String, Boolean> = mapOf()
     var timeouts: TimeoutsConfig? = null
+    var crossfade: CrossfadeConfig = CrossfadeConfig()
+}
+
+class CrossfadeConfig {
+    var enabled: Boolean = false
+    var durationMs: Long = 3000
 }
 
 class TimeoutsConfig {
