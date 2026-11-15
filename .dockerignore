@@ -1,0 +1,12 @@
+.gradle/
+.gradle-local/
+.kotlin/
+*/build/
+build/
+*/out/
+branding/
+docs/
+kotlin-js-store/
+LavalinkServer/plugins/
+application.yml
+*.log
