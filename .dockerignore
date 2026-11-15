@@ -1,7 +1,9 @@
 .gradle/
 .gradle-local/
 .kotlin/
-*/build/
+protocol/build/
+plugin-api/build/
+spectrum-plugin/build/
 build/
 */out/
 branding/
