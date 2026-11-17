@@ -7,7 +7,7 @@ Allows for sending audio without it ever reaching any of your shards.
 Modified version **enables crossfade and automix feature**. Example you can see below. To implement, read [Crossfade API Docs](docs/api/rest.md#Crossfade%20API)  
 Being used in production by FredBoat, Dyno, LewdBot, and more.
 
-<video src="docs/assets/feature_automix.webm" width="100%" controls muted loop autoplay></video>
+[feature_automix.webm](https://github.com/user-attachments/assets/cc735363-006a-4ebd-ac10-15e8409456f7)
 
 A [basic example bot](https://github.com/lavalink-devs/lavalink-client/tree/main/testbot) is available.
 
