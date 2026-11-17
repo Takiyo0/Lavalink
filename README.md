@@ -1,11 +1,13 @@
-# Lavalink
+# Lavalink w/ Crossfade + Automix (DJ)
 
 <img align="right" src="/branding/lavalink.svg" width=200 alt="Lavalink logo">
 
 A standalone audio sending node based on [Lavaplayer](https://github.com/lavalink-devs/lavaplayer) and [Koe](https://github.com/KyokoBot/koe).
-Allows for sending audio without it ever reaching any of your shards.
-
+Allows for sending audio without it ever reaching any of your shards.  
+Modified version **enables crossfade and automix feature**. Example you can see below. To implement, read [Crossfade API Docs](docs/api/rest.md#Crossfade%20API)  
 Being used in production by FredBoat, Dyno, LewdBot, and more.
+
+<video src="docs/assets/feature_automix.webm" width="100%" controls muted loop autoplay></video>
 
 A [basic example bot](https://github.com/lavalink-devs/lavalink-client/tree/main/testbot) is available.
 
